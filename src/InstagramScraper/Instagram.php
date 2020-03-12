@@ -42,7 +42,7 @@ class Instagram
     private $sessionPassword;
     private $userSession;
     private $rhxGis = null;
-    private $userAgent = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_13_4) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/66.0.3359.139 Safari/537.36';
+    private $userAgent = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/80.0.3987.132 Safari/537.36'; //'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_13_4) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/66.0.3359.139 Safari/537.36';
 
     /**
      * @param string $username
@@ -1370,7 +1370,56 @@ class Instagram
             $variables['reel_ids'] = $reel_ids;
         }
 
+        //{"user_id":"2271001831","include_chaining":true,"include_reel":true,"include_suggested_users":false,"include_logged_out_extras":false,"include_highlight_reels":true,"include_related_profiles":false}
+        $variables = [
+            "user_id" => 550072490,
+            "include_chaining" => false,
+            "include_reel" => false,
+            "include_highlight_reels" => true,
+        ];
         $response = Request::get(Endpoints::getStoriesLink($variables),
+            $this->generateHeaders($this->userSession));
+
+        if ($response->code !== static::HTTP_OK) {
+            throw new InstagramException('Response code is ' . $response->code . '. Body: ' . static::getErrorBody($response->body) . ' Something went wrong. Please report issue.', $response->code);
+        }
+
+        $jsonResponse = $this->decodeRawBodyToJson($response->raw_body);
+
+        if (empty($jsonResponse['data']['user']['edge_highlight_reels']['edges'])) {
+            return [];
+        }
+
+        $stories = [];
+        foreach ($jsonResponse['data']['user']['edge_highlight_reels']['edges'] as $story) {
+            $story = $story['node'];
+            $story = [
+                'id' => $story['id'],
+                'thumbnail' => $story['cover_media_cropped_thumbnail']['url'],
+                'title' => $story['title'],
+            ];
+            /*
+            $UserStories = UserStories::create();
+            $UserStories->setOwner(Account::create($user['user']));
+            foreach ($user['items'] as $item) {
+                $UserStories->addStory(Story::create($item));
+            }
+            $stories[] = $UserStories;
+            */
+            $stories[] = $story;
+        }
+        return $stories;
+    }
+
+    public function getStory($story_id) {
+        $variables = [
+            "highlight_reel_ids" => [$story_id],
+            "precomposed_overlay" => false,
+            "show_story_viewer_list" => false,
+            "stories_video_dash_manifest" => false,
+        ];
+
+        $response = Request::get(Endpoints::getStoryLink($variables),
             $this->generateHeaders($this->userSession));
 
         if ($response->code !== static::HTTP_OK) {
@@ -1384,7 +1433,9 @@ class Instagram
         }
 
         $stories = [];
-        foreach ($jsonResponse['data']['reels_media'] as $user) {
+
+        foreach ($jsonResponse['data']['reels_media'][0]['items'] as $item) {
+            $stories[] = Media::create($item);continue;
             $UserStories = UserStories::create();
             $UserStories->setOwner(Account::create($user['user']));
             foreach ($user['items'] as $item) {
@@ -1393,6 +1444,7 @@ class Instagram
             $stories[] = $UserStories;
         }
         return $stories;
+        
     }
 
     /**
